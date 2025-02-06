@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Dimensions, Text, TouchableOpacity, ScrollView } from 'react-native';
-import MapView, { Region, Marker } from 'react-native-maps';
+import MapView, { Region, Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 
 const { width, height } = Dimensions.get('window');
@@ -15,6 +15,12 @@ interface PersonLocation {
     latitude: number;
     longitude: number;
   };
+  role: 'deliverer' | 'customer';
+}
+
+interface DeliveryState {
+  status: 'pending' | 'in_progress' | 'completed';
+  route: { latitude: number; longitude: number }[];
 }
 
 const MapComponent: React.FC = () => {
@@ -26,6 +32,10 @@ const MapComponent: React.FC = () => {
     longitudeDelta: LONGITUDE_DELTA,
   });
   const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
+  const [deliveryState, setDeliveryState] = useState<DeliveryState>({
+    status: 'pending',
+    route: [],
+  });
   const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
@@ -36,20 +46,17 @@ const MapComponent: React.FC = () => {
         return;
       }
 
-      const person1 = { id: 'person1', name: 'Alice', coords: { latitude: 48.8566, longitude: 2.3522 } };
-      const person2 = { id: 'person2', name: 'Bob', coords: { latitude: 48.85795530833568, longitude: 2.352908103193448 } };
-      setPersonLocations([person1, person2]);
-      setSelectedPerson(person1.id);
-      updateRegion(person1.coords);
+      const deliverer = { id: 'person1', name: 'Livreur', coords: { latitude: 48.8566, longitude: 2.3522 }, role: 'deliverer' as const };
+      const customer = { id: 'person2', name: 'Client', coords: { latitude: 48.8606, longitude: 2.3376 }, role: 'customer' as const };
+      setPersonLocations([deliverer, customer]);
+      setSelectedPerson(deliverer.id);
+      updateRegion(deliverer.coords);
 
       const interval = setInterval(() => {
         setPersonLocations(prevLocations => 
           prevLocations.map(person => ({
             ...person,
-            coords: {
-              latitude: person.coords.latitude + (Math.random() - 0.5) * 0.001,
-              longitude: person.coords.longitude + (Math.random() - 0.5) * 0.001,
-            }
+            coords: person.role === 'deliverer' ? simulateMovement(person.coords) : person.coords,
           }))
         );
       }, 5000);
@@ -57,6 +64,27 @@ const MapComponent: React.FC = () => {
       return () => clearInterval(interval);
     })();
   }, []);
+
+  useEffect(() => {
+    if (deliveryState.status === 'in_progress') {
+      const deliverer = personLocations.find(p => p.role === 'deliverer');
+      const customer = personLocations.find(p => p.role === 'customer');
+      if (deliverer && customer) {
+        const newRoute = calculateRoute(deliverer.coords, customer.coords);
+        setDeliveryState(prev => ({ ...prev, route: newRoute }));
+      }
+    }
+  }, [personLocations, deliveryState.status]);
+
+  const simulateMovement = (coords: { latitude: number; longitude: number }) => ({
+    latitude: coords.latitude + (Math.random() - 0.5) * 0.001,
+    longitude: coords.longitude + (Math.random() - 0.5) * 0.001,
+  });
+
+  const calculateRoute = (start: { latitude: number; longitude: number }, end: { latitude: number; longitude: number }) => {
+    // Ceci est une simulation simple. Dans une application réelle, vous utiliseriez un service de routage.
+    return [start, end];
+  };
 
   const updateRegion = (coords: { latitude: number; longitude: number }) => {
     setRegion({
@@ -80,6 +108,14 @@ const MapComponent: React.FC = () => {
     }
   };
 
+  const startDelivery = () => {
+    setDeliveryState({ status: 'in_progress', route: [] });
+  };
+
+  const completeDelivery = () => {
+    setDeliveryState({ status: 'completed', route: [] });
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -92,10 +128,17 @@ const MapComponent: React.FC = () => {
             key={person.id}
             coordinate={person.coords}
             title={person.name}
-            description={`Latitude: ${person.coords.latitude.toFixed(4)}, Longitude: ${person.coords.longitude.toFixed(4)}`}
-            pinColor={person.id === 'person1' ? 'red' : 'blue'}
+            description={`${person.role === 'deliverer' ? 'Livreur' : 'Client'}`}
+            pinColor={person.role === 'deliverer' ? 'red' : 'blue'}
           />
         ))}
+        {deliveryState.status === 'in_progress' && (
+          <Polyline
+            coordinates={deliveryState.route}
+            strokeColor="#000"
+            strokeWidth={3}
+          />
+        )}
       </MapView>
       <View style={styles.overlay}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -109,6 +152,21 @@ const MapComponent: React.FC = () => {
             </TouchableOpacity>
           ))}
         </ScrollView>
+        <View style={styles.deliveryControls}>
+          {deliveryState.status === 'pending' && (
+            <TouchableOpacity style={styles.deliveryButton} onPress={startDelivery}>
+              <Text style={styles.deliveryButtonText}>Commencer la livraison</Text>
+            </TouchableOpacity>
+          )}
+          {deliveryState.status === 'in_progress' && (
+            <TouchableOpacity style={styles.deliveryButton} onPress={completeDelivery}>
+              <Text style={styles.deliveryButtonText}>Terminer la livraison</Text>
+            </TouchableOpacity>
+          )}
+          {deliveryState.status === 'completed' && (
+            <Text style={styles.deliveryStatus}>Livraison terminée</Text>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -142,6 +200,23 @@ const styles = StyleSheet.create({
   },
   personButtonText: {
     color: 'white',
+    fontWeight: 'bold',
+  },
+  deliveryControls: {
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  deliveryButton: {
+    backgroundColor: '#28a745',
+    padding: 10,
+    borderRadius: 5,
+  },
+  deliveryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  deliveryStatus: {
+    color: '#28a745',
     fontWeight: 'bold',
   },
 });
