@@ -8,9 +8,16 @@ const ASPECT_RATIO = width / height;
 const LATITUDE_DELTA = 0.0922;
 const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 
+interface PersonLocation {
+  id: string;
+  coords: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
 const MapComponent: React.FC = () => {
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [personLocations, setPersonLocations] = useState<PersonLocation[]>([]);
   const [region, setRegion] = useState<Region>({
     latitude: 48.8566,
     longitude: 2.3522,
@@ -22,36 +29,39 @@ const MapComponent: React.FC = () => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
+        console.error('Permission to access location was denied');
         return;
       }
 
-      let location = await Location.getCurrentPositionAsync({});
-      setLocation(location);
-      updateRegion(location);
+      // Simuler la position de deux personnes
+      const person1 = { id: 'person1', coords: { latitude: 48.8566, longitude: 2.3522 } };
+      const person2 = { id: 'person2', coords: { latitude: 48.85795530833568, longitude: 2.352908103193448 } };
+      setPersonLocations([person1, person2]);
 
-      const subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 5000,
-          distanceInterval: 10,
-        },
-        (newLocation) => {
-          setLocation(newLocation);
-          updateRegion(newLocation);
-        }
-      );
+      // Centrer la carte sur la première personne
+      updateRegion(person1.coords);
 
-      return () => {
-        subscription.remove();
-      };
+      // Simuler le mouvement des personnes
+      const interval = setInterval(() => {
+        setPersonLocations(prevLocations => 
+          prevLocations.map(person => ({
+            ...person,
+            coords: {
+              latitude: person.coords.latitude + (Math.random() - 0.5) * 0.001,
+              longitude: person.coords.longitude + (Math.random() - 0.5) * 0.001,
+            }
+          }))
+        );
+      }, 5000);
+
+      return () => clearInterval(interval);
     })();
   }, []);
 
-  const updateRegion = (location: Location.LocationObject) => {
+  const updateRegion = (coords: { latitude: number; longitude: number }) => {
     setRegion({
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
       latitudeDelta: LATITUDE_DELTA,
       longitudeDelta: LONGITUDE_DELTA,
     });
@@ -63,16 +73,15 @@ const MapComponent: React.FC = () => {
         style={styles.map}
         region={region}
       >
-        {location && (
+        {personLocations.map(person => (
           <Marker
-            coordinate={{
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-            }}
-            title="Ma position"
-            description="Vous êtes ici"
+            key={person.id}
+            coordinate={person.coords}
+            title={`Personne ${person.id}`}
+            description={`Latitude: ${person.coords.latitude}, Longitude: ${person.coords.longitude}`}
+            pinColor={person.id === 'person1' ? 'red' : 'blue'}
           />
-        )}
+        ))}
       </MapView>
     </View>
   );
