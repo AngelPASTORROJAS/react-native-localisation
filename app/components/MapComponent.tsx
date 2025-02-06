@@ -11,49 +11,57 @@ const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 const MapComponent: React.FC = () => {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [region, setRegion] = useState<Region>({
+    latitude: 48.8566,
+    longitude: 2.3522,
+    latitudeDelta: LATITUDE_DELTA,
+    longitudeDelta: LONGITUDE_DELTA,
+  });
 
   useEffect(() => {
-    let subscription: Location.LocationSubscription;
-  
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setErrorMsg('Permission to access location was denied');
         return;
       }
-  
-      subscription = await Location.watchPositionAsync(
+
+      let location = await Location.getCurrentPositionAsync({});
+      setLocation(location);
+      updateRegion(location);
+
+      const subscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
+          accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: 5000,
           distanceInterval: 10,
         },
-        (location) => {
-          setLocation(location);
+        (newLocation) => {
+          setLocation(newLocation);
+          updateRegion(newLocation);
         }
       );
-    })();
-  
-    return () => {
-      if (subscription) {
-        subscription.remove();
-      }
-    };
-  }, []);
-  
 
-  const initialRegion: Region = {
-    latitude: location?.coords.latitude || 48.8566,
-    longitude: location?.coords.longitude || 2.3522,
-    latitudeDelta: LATITUDE_DELTA,
-    longitudeDelta: LONGITUDE_DELTA,
+      return () => {
+        subscription.remove();
+      };
+    })();
+  }, []);
+
+  const updateRegion = (location: Location.LocationObject) => {
+    setRegion({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      latitudeDelta: LATITUDE_DELTA,
+      longitudeDelta: LONGITUDE_DELTA,
+    });
   };
 
   return (
     <View style={styles.container}>
       <MapView
         style={styles.map}
-        initialRegion={initialRegion}
+        region={region}
       >
         {location && (
           <Marker
