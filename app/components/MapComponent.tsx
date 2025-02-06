@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { StyleSheet, View, Dimensions, Text, TouchableOpacity, ScrollView } from 'react-native';
 import MapView, { Region, Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -23,6 +23,15 @@ interface DeliveryState {
   route: { latitude: number; longitude: number }[];
 }
 
+const PersonMarker = memo(({ person }: { person: PersonLocation }) => (
+  <Marker
+    coordinate={person.coords}
+    title={person.name}
+    description={`${person.role === 'deliverer' ? 'Livreur' : 'Client'}`}
+    pinColor={person.role === 'deliverer' ? 'red' : 'blue'}
+  />
+));
+
 const MapComponent: React.FC = () => {
   const [personLocations, setPersonLocations] = useState<PersonLocation[]>([]);
   const [region, setRegion] = useState<Region>({
@@ -39,30 +48,36 @@ const MapComponent: React.FC = () => {
   const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.error('Permission to access location was denied');
-        return;
+    const fetchLocations = async () => {
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          throw new Error('Permission to access location was denied');
+        }
+
+        const deliverer = { id: 'person1', name: 'Livreur', coords: { latitude: 48.8566, longitude: 2.3522 }, role: 'deliverer' as const };
+        const customer = { id: 'person2', name: 'Client', coords: { latitude: 48.8606, longitude: 2.3376 }, role: 'customer' as const };
+        setPersonLocations([deliverer, customer]);
+        setSelectedPerson(deliverer.id);
+        updateRegion(deliverer.coords);
+
+        const interval = setInterval(() => {
+          setPersonLocations(prevLocations => 
+            prevLocations.map(person => ({
+              ...person,
+              coords: person.role === 'deliverer' ? simulateMovement(person.coords) : person.coords,
+            }))
+          );
+        }, 5000);
+
+        return () => clearInterval(interval);
+      } catch (error) {
+        console.error('Erreur lors de la récupération des positions:', error);
+        // Vous pourriez ici envoyer l'erreur à un service de logging comme Sentry
       }
+    };
 
-      const deliverer = { id: 'person1', name: 'Livreur', coords: { latitude: 48.8566, longitude: 2.3522 }, role: 'deliverer' as const };
-      const customer = { id: 'person2', name: 'Client', coords: { latitude: 48.8606, longitude: 2.3376 }, role: 'customer' as const };
-      setPersonLocations([deliverer, customer]);
-      setSelectedPerson(deliverer.id);
-      updateRegion(deliverer.coords);
-
-      const interval = setInterval(() => {
-        setPersonLocations(prevLocations => 
-          prevLocations.map(person => ({
-            ...person,
-            coords: person.role === 'deliverer' ? simulateMovement(person.coords) : person.coords,
-          }))
-        );
-      }, 5000);
-
-      return () => clearInterval(interval);
-    })();
+    fetchLocations();
   }, []);
 
   useEffect(() => {
@@ -76,26 +91,26 @@ const MapComponent: React.FC = () => {
     }
   }, [personLocations, deliveryState.status]);
 
-  const simulateMovement = (coords: { latitude: number; longitude: number }) => ({
+  const simulateMovement = useCallback((coords: { latitude: number; longitude: number }) => ({
     latitude: coords.latitude + (Math.random() - 0.5) * 0.001,
     longitude: coords.longitude + (Math.random() - 0.5) * 0.001,
-  });
+  }), []);
 
-  const calculateRoute = (start: { latitude: number; longitude: number }, end: { latitude: number; longitude: number }) => {
+  const calculateRoute = useCallback((start: { latitude: number; longitude: number }, end: { latitude: number; longitude: number }) => {
     // Ceci est une simulation simple. Dans une application réelle, vous utiliseriez un service de routage.
     return [start, end];
-  };
+  }, []);
 
-  const updateRegion = (coords: { latitude: number; longitude: number }) => {
+  const updateRegion = useCallback((coords: { latitude: number; longitude: number }) => {
     setRegion({
       latitude: coords.latitude,
       longitude: coords.longitude,
       latitudeDelta: LATITUDE_DELTA,
       longitudeDelta: LONGITUDE_DELTA,
     });
-  };
+  }, []);
 
-  const centerMapOnPerson = (personId: string) => {
+  const centerMapOnPerson = useCallback((personId: string) => {
     const person = personLocations.find(p => p.id === personId);
     if (person) {
       setSelectedPerson(personId);
@@ -106,69 +121,68 @@ const MapComponent: React.FC = () => {
         longitudeDelta: LONGITUDE_DELTA,
       }, 1000);
     }
-  };
+  }, [personLocations]);
 
-  const startDelivery = () => {
+  const startDelivery = useCallback(() => {
     setDeliveryState({ status: 'in_progress', route: [] });
-  };
+  }, []);
 
-  const completeDelivery = () => {
+  const completeDelivery = useCallback(() => {
     setDeliveryState({ status: 'completed', route: [] });
-  };
+  }, []);
 
   return (
-    <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        region={region}
-      >
-        {personLocations.map(person => (
-          <Marker
-            key={person.id}
-            coordinate={person.coords}
-            title={person.name}
-            description={`${person.role === 'deliverer' ? 'Livreur' : 'Client'}`}
-            pinColor={person.role === 'deliverer' ? 'red' : 'blue'}
-          />
-        ))}
-        {deliveryState.status === 'in_progress' && (
-          <Polyline
-            coordinates={deliveryState.route}
-            strokeColor="#000"
-            strokeWidth={3}
-          />
-        )}
-      </MapView>
-      <View style={styles.overlay}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={styles.container}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          region={region}
+          moveOnMarkerPress={false}
+          showsUserLocation={false}
+          showsMyLocationButton={false}
+          showsCompass={false}
+          showsScale={false}
+        >
           {personLocations.map(person => (
-            <TouchableOpacity
-              key={person.id}
-              style={[styles.personButton, selectedPerson === person.id && styles.selectedButton]}
-              onPress={() => centerMapOnPerson(person.id)}
-            >
-              <Text style={styles.personButtonText}>{person.name}</Text>
-            </TouchableOpacity>
+            <PersonMarker key={person.id} person={person} />
           ))}
-        </ScrollView>
-        <View style={styles.deliveryControls}>
-          {deliveryState.status === 'pending' && (
-            <TouchableOpacity style={styles.deliveryButton} onPress={startDelivery}>
-              <Text style={styles.deliveryButtonText}>Commencer la livraison</Text>
-            </TouchableOpacity>
-          )}
           {deliveryState.status === 'in_progress' && (
-            <TouchableOpacity style={styles.deliveryButton} onPress={completeDelivery}>
-              <Text style={styles.deliveryButtonText}>Terminer la livraison</Text>
-            </TouchableOpacity>
+            <Polyline
+              coordinates={deliveryState.route}
+              strokeColor="#000"
+              strokeWidth={3}
+            />
           )}
-          {deliveryState.status === 'completed' && (
-            <Text style={styles.deliveryStatus}>Livraison terminée</Text>
-          )}
+        </MapView>
+        <View style={styles.overlay}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {personLocations.map(person => (
+              <TouchableOpacity
+                key={person.id}
+                style={[styles.personButton, selectedPerson === person.id && styles.selectedButton]}
+                onPress={() => centerMapOnPerson(person.id)}
+              >
+                <Text style={styles.personButtonText}>{person.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={styles.deliveryControls}>
+            {deliveryState.status === 'pending' && (
+              <TouchableOpacity style={styles.deliveryButton} onPress={startDelivery}>
+                <Text style={styles.deliveryButtonText}>Commencer la livraison</Text>
+              </TouchableOpacity>
+            )}
+            {deliveryState.status === 'in_progress' && (
+              <TouchableOpacity style={styles.deliveryButton} onPress={completeDelivery}>
+                <Text style={styles.deliveryButtonText}>Terminer la livraison</Text>
+              </TouchableOpacity>
+            )}
+            {deliveryState.status === 'completed' && (
+              <Text style={styles.deliveryStatus}>Livraison terminée</Text>
+            )}
+          </View>
         </View>
       </View>
-    </View>
   );
 };
 
