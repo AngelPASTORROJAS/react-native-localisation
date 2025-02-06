@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Dimensions, Text, TouchableOpacity, ScrollView } from 'react-native';
 import MapView, { Region, Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 
@@ -10,6 +10,7 @@ const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 
 interface PersonLocation {
   id: string;
+  name: string;
   coords: {
     latitude: number;
     longitude: number;
@@ -24,6 +25,8 @@ const MapComponent: React.FC = () => {
     latitudeDelta: LATITUDE_DELTA,
     longitudeDelta: LONGITUDE_DELTA,
   });
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
+  const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
     (async () => {
@@ -33,15 +36,12 @@ const MapComponent: React.FC = () => {
         return;
       }
 
-      // Simuler la position de deux personnes
-      const person1 = { id: 'person1', coords: { latitude: 48.8566, longitude: 2.3522 } };
-      const person2 = { id: 'person2', coords: { latitude: 48.85795530833568, longitude: 2.352908103193448 } };
+      const person1 = { id: 'person1', name: 'Alice', coords: { latitude: 48.8566, longitude: 2.3522 } };
+      const person2 = { id: 'person2', name: 'Bob', coords: { latitude: 48.85795530833568, longitude: 2.352908103193448 } };
       setPersonLocations([person1, person2]);
-
-      // Centrer la carte sur la première personne
+      setSelectedPerson(person1.id);
       updateRegion(person1.coords);
 
-      // Simuler le mouvement des personnes
       const interval = setInterval(() => {
         setPersonLocations(prevLocations => 
           prevLocations.map(person => ({
@@ -67,9 +67,23 @@ const MapComponent: React.FC = () => {
     });
   };
 
+  const centerMapOnPerson = (personId: string) => {
+    const person = personLocations.find(p => p.id === personId);
+    if (person) {
+      setSelectedPerson(personId);
+      mapRef.current?.animateToRegion({
+        latitude: person.coords.latitude,
+        longitude: person.coords.longitude,
+        latitudeDelta: LATITUDE_DELTA,
+        longitudeDelta: LONGITUDE_DELTA,
+      }, 1000);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={styles.map}
         region={region}
       >
@@ -77,12 +91,25 @@ const MapComponent: React.FC = () => {
           <Marker
             key={person.id}
             coordinate={person.coords}
-            title={`Personne ${person.id}`}
-            description={`Latitude: ${person.coords.latitude}, Longitude: ${person.coords.longitude}`}
+            title={person.name}
+            description={`Latitude: ${person.coords.latitude.toFixed(4)}, Longitude: ${person.coords.longitude.toFixed(4)}`}
             pinColor={person.id === 'person1' ? 'red' : 'blue'}
           />
         ))}
       </MapView>
+      <View style={styles.overlay}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {personLocations.map(person => (
+            <TouchableOpacity
+              key={person.id}
+              style={[styles.personButton, selectedPerson === person.id && styles.selectedButton]}
+              onPress={() => centerMapOnPerson(person.id)}
+            >
+              <Text style={styles.personButtonText}>{person.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 };
@@ -91,12 +118,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   map: {
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
+  },
+  overlay: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    padding: 10,
+  },
+  personButton: {
+    backgroundColor: '#007AFF',
+    padding: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  selectedButton: {
+    backgroundColor: '#0056b3',
+  },
+  personButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
 
